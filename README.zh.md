@@ -40,6 +40,7 @@ dsh web
 - `agent/request` 是 waterfall：payload 为 `{ agent, turn, step, signal }`，`next()` 解析 `LlmCallConfig`；返回修改后的副本是调整请求配置的官方途径（`reasoningEffort` 会被转发为线上 `reasoning_effort`）。
 - 会话历史通过 `Session.eventAt(seq)` + `Session.seq` 读取——`Session` 类**没有** `.events` 属性。
 - 工具耗时来自 `session/event` 事件流（`tool/call` → `tool/result`，按会话 id + `callId` 关联）。运行时不存在 `agent/tool` 事件。
+- 包以编译后的 `dist/` JavaScript 发布：Node 拒绝对 `node_modules` 下的 `.ts` 做类型剥离（`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`），裸 TypeScript 入口在任何已安装副本上都是启动即失败。`npm pack` 通过 `prepack` 自动构建。
 
 ## 验证
 

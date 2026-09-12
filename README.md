@@ -43,6 +43,7 @@ Verified against `@deepseek-ai/dsh-agent` / `dsh-session` `0.1.2-rc.1`:
 - `agent/request` is a waterfall: payload `{ agent, turn, step, signal }`, `next()` resolves the `LlmCallConfig`; returning a modified copy is the sanctioned way to adjust request config (`reasoningEffort` is forwarded as the wire `reasoning_effort`).
 - Session history is read through `Session.eventAt(seq)` + `Session.seq` — the `Session` class exposes **no** `.events` property.
 - Per-tool durations come from the `session/event` firehose (`tool/call` → `tool/result`, correlated by `callId` per session id). There is no `agent/tool` event.
+- The package ships compiled `dist/` JavaScript: Node refuses to type-strip `.ts` files under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a raw TypeScript entry is a hard boot failure for any installed copy. `npm pack` builds via `prepack`.
 
 ## Verified
 

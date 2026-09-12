@@ -4,15 +4,15 @@
   "description": "DSH host plugin: cuts tool-call latency by auto-downgrading reasoning_effort for simple tool tasks, with per-tool timing telemetry.",
   "private": true,
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./effort-decision": {
-      "types": "./src/effort-decision.ts",
-      "default": "./src/effort-decision.ts"
+      "types": "./dist/effort-decision.d.ts",
+      "default": "./dist/effort-decision.js"
     },
     "./package.json": "./package.json"
   },
@@ -23,16 +23,18 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@types/node": "^24.0.0",
-    "typescript": "^5.6.0",
+    "typescript": "^5.7.2",
     "vitest": "^3.0.0"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "license": "MIT",
   "files": [
-    "src",
+    "dist",
     "cordis.patch.yml",
     "README.md",
     "README.zh.md"
