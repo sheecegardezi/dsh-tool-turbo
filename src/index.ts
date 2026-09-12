@@ -19,6 +19,54 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { decideEffort, type EffortId, type ToolCallSample } from './effort-decision.ts'
 
+/** The plugin needs the host `llm` service to verify model capabilities. */
+export const inject = ['llm']
+
+/** pi-ai thinking levels in escalation order (mirrors dsh-llm-pi-ai). */
+const LEVEL_ORDER = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/**
+ * Clamp a decided effort to the levels the current model actually accepts.
+ * Returns undefined when the model exposes no usable effort level — callers
+ * must then leave the request untouched (injecting an unverified effort is
+ * rejected by the adapter with UNSUPPORTED_REASONING_EFFORT).
+ * Pure; unit-testable without a host.
+ */
+export function clampEffort(effort: EffortId, supportedIds: readonly unknown[] | undefined): string | undefined {
+  if (!Array.isArray(supportedIds)) return undefined
+  if (supportedIds.includes(effort)) return effort
+  const target = LEVEL_ORDER.indexOf(effort)
+  const ranked = supportedIds
+    .filter((id): id is string => typeof id === 'string' && (LEVEL_ORDER as readonly string[]).includes(id))
+    .sort((a, b) => LEVEL_ORDER.indexOf(a as typeof LEVEL_ORDER[number]) - LEVEL_ORDER.indexOf(b as typeof LEVEL_ORDER[number]))
+  if (ranked.length === 0) return undefined
+  const below = ranked.filter((id) => LEVEL_ORDER.indexOf(id as typeof LEVEL_ORDER[number]) <= target)
+  return below.length > 0 ? below[below.length - 1] : ranked[0]
+}
+
+/** Minimal slice of the host llm service this plugin relies on. */
+interface LlmLike {
+  resolveModelInfo?: (provider: string, model: string) => Promise<{
+    reasoning?: { efforts?: { id?: unknown }[] }
+  }>
+}
+
+/** Supported effort ids of the request's resolved model, or undefined. */
+async function supportedEfforts(ctx: Context, seed: unknown): Promise<readonly unknown[] | undefined> {
+  const llm = (ctx as unknown as { llm?: LlmLike }).llm
+  if (!llm || typeof llm.resolveModelInfo !== 'function') return undefined
+  const provider = (seed as { provider?: unknown })?.provider
+  const model = (seed as { model?: unknown })?.model
+  if (typeof provider !== 'string' || typeof model !== 'string') return undefined
+  try {
+    const info = await llm.resolveModelInfo(provider, model)
+    const efforts = info?.reasoning?.efforts
+    return Array.isArray(efforts) ? efforts.map((e) => e?.id) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Plugin settings: active by default, conservative by construction. */
 export interface ToolTurboConfig {
   enabled: boolean
@@ -126,15 +174,19 @@ export function apply(ctx: Context, config: Partial<ToolTurboConfig> = {}): void
     // Fresh prompt (no tool history yet): leave the request untouched so the
     // UI selection or the provider default keeps governing the first round.
     if (calls.length === 0) return seed
-    const effort = decideEffort({
+    const decided = decideEffort({
       recentCalls: calls,
       selected: settings.baseline,
       allowDowngrade: settings.allowDowngrade,
       allowUpgrade: settings.allowUpgrade,
     })
+    const effort = clampEffort(decided, await supportedEfforts(ctx, seed))
+    // Model exposes no usable level (or capabilities unknown): leave the
+    // request untouched rather than inject an effort the adapter rejects.
+    if (effort === undefined) return seed
     ctx.logger?.info?.(
-      '[tool-turbo] %d recent tool call(s) -> reasoningEffort=%s (baseline=%s)',
-      calls.length, effort, settings.baseline,
+      '[tool-turbo] %d recent tool call(s) -> reasoningEffort=%s (decided=%s baseline=%s)',
+      calls.length, effort, decided, settings.baseline,
     )
     return { ...(seed ?? {}), reasoningEffort: effort }
   })

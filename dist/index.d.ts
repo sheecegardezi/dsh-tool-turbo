@@ -18,6 +18,16 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import { type EffortId } from './effort-decision.ts';
+/** The plugin needs the host `llm` service to verify model capabilities. */
+export declare const inject: string[];
+/**
+ * Clamp a decided effort to the levels the current model actually accepts.
+ * Returns undefined when the model exposes no usable effort level — callers
+ * must then leave the request untouched (injecting an unverified effort is
+ * rejected by the adapter with UNSUPPORTED_REASONING_EFFORT).
+ * Pure; unit-testable without a host.
+ */
+export declare function clampEffort(effort: EffortId, supportedIds: readonly unknown[] | undefined): string | undefined;
 /** Plugin settings: active by default, conservative by construction. */
 export interface ToolTurboConfig {
     enabled: boolean;

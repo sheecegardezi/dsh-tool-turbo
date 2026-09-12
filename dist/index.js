@@ -1,4 +1,47 @@
 import { decideEffort } from "./effort-decision.js";
+/** The plugin needs the host `llm` service to verify model capabilities. */
+export const inject = ['llm'];
+/** pi-ai thinking levels in escalation order (mirrors dsh-llm-pi-ai). */
+const LEVEL_ORDER = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+/**
+ * Clamp a decided effort to the levels the current model actually accepts.
+ * Returns undefined when the model exposes no usable effort level — callers
+ * must then leave the request untouched (injecting an unverified effort is
+ * rejected by the adapter with UNSUPPORTED_REASONING_EFFORT).
+ * Pure; unit-testable without a host.
+ */
+export function clampEffort(effort, supportedIds) {
+    if (!Array.isArray(supportedIds))
+        return undefined;
+    if (supportedIds.includes(effort))
+        return effort;
+    const target = LEVEL_ORDER.indexOf(effort);
+    const ranked = supportedIds
+        .filter((id) => typeof id === 'string' && LEVEL_ORDER.includes(id))
+        .sort((a, b) => LEVEL_ORDER.indexOf(a) - LEVEL_ORDER.indexOf(b));
+    if (ranked.length === 0)
+        return undefined;
+    const below = ranked.filter((id) => LEVEL_ORDER.indexOf(id) <= target);
+    return below.length > 0 ? below[below.length - 1] : ranked[0];
+}
+/** Supported effort ids of the request's resolved model, or undefined. */
+async function supportedEfforts(ctx, seed) {
+    const llm = ctx.llm;
+    if (!llm || typeof llm.resolveModelInfo !== 'function')
+        return undefined;
+    const provider = seed?.provider;
+    const model = seed?.model;
+    if (typeof provider !== 'string' || typeof model !== 'string')
+        return undefined;
+    try {
+        const info = await llm.resolveModelInfo(provider, model);
+        const efforts = info?.reasoning?.efforts;
+        return Array.isArray(efforts) ? efforts.map((e) => e?.id) : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 export const DEFAULT_CONFIG = {
     enabled: true,
     allowDowngrade: true,
@@ -69,13 +112,18 @@ export function apply(ctx, config = {}) {
         // UI selection or the provider default keeps governing the first round.
         if (calls.length === 0)
             return seed;
-        const effort = decideEffort({
+        const decided = decideEffort({
             recentCalls: calls,
             selected: settings.baseline,
             allowDowngrade: settings.allowDowngrade,
             allowUpgrade: settings.allowUpgrade,
         });
-        ctx.logger?.info?.('[tool-turbo] %d recent tool call(s) -> reasoningEffort=%s (baseline=%s)', calls.length, effort, settings.baseline);
+        const effort = clampEffort(decided, await supportedEfforts(ctx, seed));
+        // Model exposes no usable level (or capabilities unknown): leave the
+        // request untouched rather than inject an effort the adapter rejects.
+        if (effort === undefined)
+            return seed;
+        ctx.logger?.info?.('[tool-turbo] %d recent tool call(s) -> reasoningEffort=%s (decided=%s baseline=%s)', calls.length, effort, decided, settings.baseline);
         return { ...(seed ?? {}), reasoningEffort: effort };
     });
     // Per-tool wall-clock telemetry: time each `tool/call` against its
