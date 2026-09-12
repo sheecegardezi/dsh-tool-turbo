@@ -19,44 +19,45 @@ Long tool chains keep the cheap rounds cheap, and never starve the hard rounds o
 ## Install
 
 ```bash
-# 1. clone + build the plugin
+# 1. clone + install dev dependencies (typecheck/tests only)
 git clone https://github.com/Electricitysheep/dsh-tool-turbo.git
 cd dsh-tool-turbo && npm install
 
-# 2. register into your dsh profile (web shown; any profile works)
-#    ~/.dsh/profiles/web/package.json dependencies:
-#      "dsh-tool-turbo": "link:<absolute path to dsh-tool-turbo>"
-#    ~/.dsh/profiles/web/cordis.patch.yml:
-#      - insert:
-#          - id: tool-turbo
-#            name: dsh-tool-turbo
-cd ~/.dsh/profiles/web && pnpm install
+# 2. register into a dsh profile (web shown; any profile works)
+#    from a packed tarball:
+npm pack
+dsh plugin --profile web add /absolute/path/to/dsh-tool-turbo-0.1.1.tgz
+#    or directly from the checkout:
+dsh plugin --profile web add /absolute/path/to/dsh-tool-turbo
 
-# 3. restart dsh web
+# 3. restart dsh web — bundle layers load at boot
 dsh web
 ```
 
+Toggles are patch-entry config keys (`enabled`, `allowDowngrade`, `allowUpgrade`, `baseline`); unspecified keys fall back to the defaults, so a partial `config:` block is safe.
+
+## Runtime API notes
+
+Verified against `@deepseek-ai/dsh-agent` / `dsh-session` `0.1.2-rc.1`:
+
+- `agent/request` is a waterfall: payload `{ agent, turn, step, signal }`, `next()` resolves the `LlmCallConfig`; returning a modified copy is the sanctioned way to adjust request config (`reasoningEffort` is forwarded as the wire `reasoning_effort`).
+- Session history is read through `Session.eventAt(seq)` + `Session.seq` — the `Session` class exposes **no** `.events` property.
+- Per-tool durations come from the `session/event` firehose (`tool/call` → `tool/result`, correlated by `callId` per session id). There is no `agent/tool` event.
+
 ## Verified
 
-- **Injector works in a live dsh instance** (log lines from a real run):
-
-```
-[tool-turbo] agent/request: baseline=high calls=[]                    => reasoningEffort=high
-[tool-turbo] agent/request: baseline=high calls=[{"name":"write",…}] => reasoningEffort=low
-```
-
-- **6/6 unit tests** on the effort policy (`decideEffort`): fresh prompt keeps the baseline, simple-tool chains downgrade to `low`, downgrades respect the user toggle, heavy payloads upgrade to `max` (opt-in), mixed tools lift to `high`.
+- **17 unit tests** across the effort policy (`decideEffort`) and the host wiring (`apply`): fresh prompts keep the effective request untouched, simple-tool chains downgrade to `low`, downgrades/upgrades respect the user toggles in both directions (never below baseline without `allowDowngrade`), one very heavy payload wins over an otherwise-simple ratio, and telemetry times `tool/call` → `tool/result`.
 - `tsc --noEmit` clean.
 
 ## Policy (pure, testable)
 
 | Recent tool calls | Decision |
 |---|---|
-| none (fresh prompt) | keep user's selected effort |
+| none (fresh prompt) | leave the request untouched |
+| any single very heavy payload (≥ 3200 chars) | `max` |
 | ≥75% simple tools, small args, downgrade allowed | `low` |
 | mixed / heavy tools | `high` (when upgrades allowed) |
-| very heavy payloads, upgrade allowed | `max` |
-| otherwise | keep user's selected effort |
+| otherwise / consent clamps | keep user's selected effort |
 
 Toggles (settings namespace planned): `allowDowngrade` (default on), `allowUpgrade` (default off — keep `max` conservative), `baseline` (default `high`).
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-turbo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH host plugin: cuts tool-call latency by auto-downgrading reasoning_effort for simple tool tasks, with per-tool timing telemetry.",
   "private": true,
   "type": "module",
@@ -17,17 +17,11 @@
     "./package.json": "./package.json"
   },
   "engines": {
-    "node": ">=20"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6"
+    "node": "^22.19.0 || >=24.0.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
     "@types/node": "^24.0.0",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0"
@@ -37,6 +31,12 @@
     "test": "vitest run"
   },
   "license": "MIT",
+  "files": [
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

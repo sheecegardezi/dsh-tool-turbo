@@ -17,44 +17,44 @@ DeepSeek API 提供三档 `reasoning_effort`（`low` / `high` / `max`，2026-08-
 ## 安装
 
 ```bash
-# 1. 克隆并安装
+# 1. 克隆并安装开发依赖（仅用于类型检查与测试）
 git clone https://github.com/Electricitysheep/dsh-tool-turbo.git
 cd dsh-tool-turbo && npm install
 
 # 2. 注册进你的 dsh profile（以 web 为例，任意 profile 均可）
-#    ~/.dsh/profiles/web/package.json dependencies 增加：
-#      "dsh-tool-turbo": "link:<dsh-tool-turbo 的绝对路径>"
-#    ~/.dsh/profiles/web/cordis.patch.yml：
-#      - insert:
-#          - id: tool-turbo
-#            name: dsh-tool-turbo
-cd ~/.dsh/profiles/web && pnpm install
+npm pack
+dsh plugin --profile web add /绝对路径/dsh-tool-turbo-0.1.1.tgz
+#    或直接指向检出目录：
+dsh plugin --profile web add /绝对路径/dsh-tool-turbo
 
-# 3. 重启 dsh web
+# 3. 重启 dsh web —— bundle 层在启动时加载
 dsh web
 ```
 
+配置项（patch entry 的 `config:` 键）：`enabled`、`allowDowngrade`、`allowUpgrade`、`baseline`；未指定的键回落默认值，部分配置安全。
+
+## 运行时 API 说明
+
+已对照 `@deepseek-ai/dsh-agent` / `dsh-session` `0.1.2-rc.1` 验证：
+
+- `agent/request` 是 waterfall：payload 为 `{ agent, turn, step, signal }`，`next()` 解析 `LlmCallConfig`；返回修改后的副本是调整请求配置的官方途径（`reasoningEffort` 会被转发为线上 `reasoning_effort`）。
+- 会话历史通过 `Session.eventAt(seq)` + `Session.seq` 读取——`Session` 类**没有** `.events` 属性。
+- 工具耗时来自 `session/event` 事件流（`tool/call` → `tool/result`，按会话 id + `callId` 关联）。运行时不存在 `agent/tool` 事件。
+
 ## 验证
 
-- **真实 dsh 实例中注入器生效**（实际运行的日志）：
-
-```
-[tool-turbo] agent/request: baseline=high calls=[]                    => reasoningEffort=high
-[tool-turbo] agent/request: baseline=high calls=[{"name":"write",…}] => reasoningEffort=low
-```
-
-- **6/6 单元测试**覆盖策略（`decideEffort`）：全新提示保持基线档、简单工具链降至 `low`、降档尊重用户开关、超大载荷升至 `max`（可选）、混合工具升至 `high`。
+- **17 个单元测试**覆盖策略（`decideEffort`）与宿主接线（`apply`）：全新提示不改动请求、简单工具链降至 `low`、升降档双向尊重用户开关（未开 `allowDowngrade` 时绝不低于基线）、单个超大载荷优先于简单占比、遥测按 `tool/call` → `tool/result` 计时。
 - `tsc --noEmit` 通过。
 
 ## 决策策略（纯函数，可测试）
 
 | 最近的工具调用 | 决策 |
 |---|---|
-| 无（全新提示） | 保持用户选择的档位 |
+| 无（全新提示） | 不改动请求 |
+| 任一单次超大载荷（≥ 3200 字符） | `max` |
 | ≥75% 简单工具、小载荷、允许降档 | `low` |
 | 混合 / 重工具 | `high`（允许升级时） |
-| 超大载荷、允许升级 | `max` |
-| 其他 | 保持用户选择的档位 |
+| 其他 / 受开关约束 | 保持用户选择的档位 |
 
 开关（settings 命名空间规划中）：`allowDowngrade`（默认开）、`allowUpgrade`（默认关——`max` 保持保守）、`baseline`（默认 `high`）。
 

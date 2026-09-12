@@ -43,6 +43,28 @@ describe('decideEffort', () => {
     ]
     expect(decideEffort(base({ recentCalls, selected: 'low' }))).toBe('high')
   })
+
+  it('a single very heavy payload wins over an otherwise-simple ratio', () => {
+    const recentCalls = [
+      { name: 'bash', argsSize: 40 },
+      { name: 'fs_read', argsSize: 20 },
+      { name: 'fs_write', argsSize: 120 },
+      { name: 'mcp__docs', argsSize: 4000 },
+    ]
+    // 75% simple + one huge call: the huge call must not be reasoned at `low`.
+    expect(decideEffort(base({ recentCalls, selected: 'high' }))).toBe('max')
+    expect(decideEffort(base({ recentCalls, selected: 'high', allowUpgrade: false }))).toBe('high')
+  })
+
+  it('never drops below the selected baseline when downgrades are disabled', () => {
+    const recentCalls = [
+      { name: 'bash', argsSize: 40 },
+      { name: 'web_search', argsSize: 900 },
+    ]
+    // Mixed tools target `high`; with baseline `max` that is a downgrade the
+    // user has not consented to, so the baseline must win.
+    expect(decideEffort(base({ recentCalls, selected: 'max', allowDowngrade: false }))).toBe('max')
+  })
 })
 
 describe('toolDurationMs', () => {
